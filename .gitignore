@@ -1,0 +1,13 @@
+/build/
+*.o
+*.a
+*.dylib
+*.so
+*.dSYM/
+*.profraw
+*.profdata
+__pycache__/
+/esaExample
+/crash-*
+/leak-*
+/timeout-*

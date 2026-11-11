@@ -1,0 +1,58 @@
+name: C library checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+          - os: ubuntu-latest
+            cc: clang
+            cxx: clang++
+          - os: macos-latest
+            cc: clang
+            cxx: clang++
+    runs-on: ${{ matrix.os }}
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -j2 check
+      - run: make sanitize
+      - name: Thread sanitizer
+        if: runner.os == 'macOS'
+        run: make thread-sanitize
+      - name: Static analysis
+        if: matrix.cc == 'clang'
+        run: clang --analyze -Xanalyzer -analyzer-werror -std=c11 -Wall -Wextra esa.c
+
+  coverage-and-fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: make coverage
+      - run: make fuzz
+      - run: make tooling-test
+      - name: Benchmark smoke test
+        run: python3 benchmarks/run.py --samples 2 --rounds 100 --init-rounds 100 --output build/benchmark.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-reports
+          path: |
+            build/coverage/html
+            build/benchmark.json

@@ -24,101 +24,45 @@
  * Written by Joshua S. English.
  */
 
-// preprocessor directives
-
+#include "esa.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "esa.h"
 
-// define esa example data
-
-static const char *EXAMPLE_TOKENS[] = {
-	"This",
-	"is",
-	"a",
-	"test",
-	"of",
-	"the",
-	"English",
-	"Stemming",
-	"Algorithm",
-	"(ESA)",
-	"(English,",
-	"Joshua",
-	"S.",
-	"2003).",
-	"Here",
-	"is",
-	"a",
-	"typical",
-	"sentence:",
-	"the",
-	"quick",
-	"brown",
-	"fox",
-	"jumped",
-	"over",
-	"the",
-	"lazy",
-	"dogs.",
-	"Theses",
-	"here",
-	"words",
-	"type",
-	"thingamajiggers",
-	"will",
-	"hopefully",
-	"be",
-	"correctly",
-	"stemmed",
-	"by",
-	"this",
-	"heary",
-	"algorithmic",
-	"and",
-	"stemmed",
-	"out",
-	"to",
-	"their",
-	"proper",
-	"selves",
-	NULL
+static const char *const EXAMPLE_TOKENS[] = {
+    "This", "is", "a", "test", "of", "the", "English", "Stemming", "Algorithm",
+    "(ESA)", "(English,", "Joshua", "S.", "2003).", "Here", "is", "a", "typical",
+    "sentence:", "the", "quick", "brown", "fox", "jumped", "over", "the", "lazy",
+    "dogs.", "Theses", "here", "words", "type", "thingamajiggers", "will",
+    "hopefully", "be", "correctly", "stemmed", "by", "this", "heary",
+    "algorithmic", "and", "stemmed", "out", "to", "their", "proper", "selves"
 };
 
-// main function
-
-int main()
+int main(int argc, char **argv)
 {
-	int ii = 0;
-	int tokenLength = 0;
-	char *token = NULL;
-	char *stem = NULL;
-
-	Esa esa;
-
-	printf("Example output from ESA:\n\n");
-
-	esaInit(&esa);
-	esaSetDebugMode(&esa, (unsigned char)0);
-
-	for(ii = 0; EXAMPLE_TOKENS[ii] != NULL; ii++) {
-		token = (char *)EXAMPLE_TOKENS[ii];
-		tokenLength = strlen(token);
-
-		stem = esaStemToken(&esa, token, tokenLength);
-
-		printf("\t ...token '%s' => transform => '%s'\n", token, stem);
-
-		if(stem != NULL) {
-			free(stem);
-		}
-	}
-
-	esaFree(&esa);
-
-	printf("\n\n...Example completed.\n");
-
-	return 0;
+    Esa esa;
+    EsaStatus status = esaInitDefault(&esa);
+    size_t i;
+    size_t count = argc > 1 ? (size_t)(argc - 1) :
+                   sizeof(EXAMPLE_TOKENS) / sizeof(EXAMPLE_TOKENS[0]);
+    if (status != ESA_OK) {
+        fprintf(stderr, "ESA initialization failed: %s\n", esaStatusString(status));
+        return EXIT_FAILURE;
+    }
+    puts("Example output from ESA:\n");
+    for (i = 0; i < count; ++i) {
+        const char *token = argc > 1 ? argv[i + 1] : EXAMPLE_TOKENS[i];
+        char *stem = NULL;
+        status = esaStemAlloc(&esa, token, strlen(token), &stem, NULL);
+        if (status != ESA_OK) {
+            fprintf(stderr, "Stemming failed: %s\n", esaStatusString(status));
+            esaFree(&esa);
+            return EXIT_FAILURE;
+        }
+        printf("  '%s' => '%s'\n", token, stem);
+        free(stem);
+    }
+    esaFree(&esa);
+    puts("\nExample completed.");
+    return EXIT_SUCCESS;
 }
-

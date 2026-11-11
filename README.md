@@ -1,37 +1,122 @@
-# English Stemming Algorithm - reference implementation in C
-### Joshua S. English, 2003
+# English Stemming Algorithm (ESA)
 
-## Abstract
-This is an abstract of the English Stemming Algorithm Whitepaper authored by Joshua S. English in 2003. The algorithm describes a methodology for reducing the morphological variation of a given set of tokens, comprising words from a specified language, through conflation. This family of algorithms is commonly referred to as 'stemming', and is often used in information-retrieval applications for performance enhancement.
+A small C11 library for reducing English word variants to common stems. ESA
+applies ordered suffix rules, including conditional chains of transformations.
+The original algorithm is by Joshua S. English (2003); this repository contains
+its C reference implementation and a compiled rules engine.
 
-The full version of the Whitepaper may be found [here](http://www.xaede.net/blog/2009/06/14/english-stemming-algorithm-2003/).
-
-## Introduction
-The English Stemming Algorithm (ESA) is designed to iteratively apply a set of rules to reduce any given word to a common base by matching zero or more suffix strings against word-endings. Each rule has the capability to remove, replace, extend or otherwise alter the supplied word, and the order in which the ESA rules are defined is significant due to methodology where rules may be devised to act upon the results produced by previously applied rules, which which are always applied in the order in which they are defined.
-
-The rule format used by ESA is comprised of four parts, which define the suffix to be matched, if the rule may be applied to a token which has already bee altered by another rule and finally the number of characters to remove, alter or append.
-
-## Reference Implementation
-The ESA reference implementation was structured such that the set of rules used by the algorithm were identical to the morphological conflation utilized by the Porter Stemming Algorithm (Porter, M.F, 1980). This was done to both ensure that the reference implementation was working correctly by comparing its output against that of the Porter algorithm, but also provided a framework for research efforts such as performance comparisons, etc. The algorithms were exhaustively tested against a database comprising the most commonly-used words in the English language, and it was found that ESA was, on average, 25% faster.
-
-## Related Algorithm Comparisons
-It was noted during the design phase that ESA, while exhibiting certain similarities to the Paice/Husk (i.e. the Lancaster Algorithms) (Paice, C; Husk, G; 1980) in that it uses a rule-set, the ESA rule-set is far shorter, faster to execute, and more flexible given its extended and interdependent rule capability. The application of a single-step rule-application methodology allowed ESA to outperform Porter, while also providing for extensible functionality (including the application against other languages). The full whitepaper goes on to detail further comparisons against other stemming algorithms, with the conclusion that the simplicity, performance, extensibility, and the potential for applying it to other languages clearly indicates the superiority of its design compared to the other algorithms commonly in-use today.
-
-## Run Example
-Simply execute the included script to compile and run the example against the reference implementation:
+```text
+Stemming  → stem
+jumped    → jump
+proper    → prop
+(ESA)     → esa
 ```
-$ ./buildExample.sh
-Example output from ESA:
 
-         ...token 'This' => transform => 'this'
-         ...token 'is' => transform => 'is'
-         ...token 'a' => transform => 'a'
-         ...token 'test' => transform => 'test'
- ...
-         ...token 'their' => transform => 'their'
-         ...token 'proper' => transform => 'prop'
-         ...token 'selves' => transform => 'selv'
+Stems are retrieval keys, so they need not be dictionary words. ESA is a distinct
+algorithm; its default rules do not promise identical output to Porter or
+Lancaster stemming.
 
+## Build and run
 
-...Example completed.
+A C11 compiler and Make are sufficient for the library and example. The library
+has no third-party dependencies.
+
+```sh
+make
+./build/esaExample Stemming jumped proper '(ESA)'
+# Or compile and run the supplied example:
+./buildExample.sh
 ```
+
+Build outputs stay in `build/`. `make` produces `libesa.a` and the example.
+You can also compile `esa.c` directly into your application:
+
+```sh
+cc -std=c11 -O3 -I/path/to/esa application.c /path/to/esa/esa.c -o application
+```
+
+## Use the library
+
+```c
+#include "esa.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int main(void)
+{
+    Esa esa;
+    char *stem = NULL;
+    const char *word = "Stemming";
+    EsaStatus status = esaInitDefault(&esa);
+    if (status != ESA_OK) {
+        fprintf(stderr, "%s\n", esaStatusString(status));
+        return EXIT_FAILURE;
+    }
+    status = esaStemAlloc(&esa, word, strlen(word), &stem, NULL);
+    if (status == ESA_OK) {
+        puts(stem);
+        free(stem);
+    }
+    esaFree(&esa);
+    return status == ESA_OK ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+```
+
+For batch processing, `esaStemInto` writes to a caller-owned buffer without
+allocating. `esaRequiredCapacity` computes a safe capacity, and optional
+`EsaMetrics` counters explain rule execution. Custom rule sets use
+`esaInitRules`. The original `esaInit`, `esaSetDebugMode`, `esaStemToken`, and
+`esaFree` entry points remain available.
+
+## Behavior and compatibility
+
+- Inputs are byte spans, with no required NUL terminator. ASCII letters are
+  lowercased; all other bytes are removed. Tokenize text before stemming.
+- Rules run only if the normalized token has at least five letters, including
+  a vowel and a consonant. `y` always counts as a vowel.
+- Every removal must leave at least three letters before appending anything.
+- Rule groups run in declaration order. Chains are conditional, and earlier
+  groups are never restarted.
+- An initialized engine can serve concurrent readers with separate output
+  buffers. Initialization, destruction, and debug-mode changes require
+  exclusive access.
+
+Normalization and three corpus outputs have intentionally changed to fix bugs.
+The `Esa` struct layout also changed: **recompile consumers**, and stop accessing
+its internals. Read the [migration guide](docs/migration.md) before upgrading.
+This library handles ASCII English tokens; it does not perform Unicode case
+folding, tokenization, lemmatization, or language detection.
+
+## Verify and measure
+
+```sh
+make check             # Strict C/C++ builds, unit/differential/concurrency tests
+make sanitize          # AddressSanitizer + UndefinedBehaviorSanitizer
+make thread-sanitize   # ThreadSanitizer, where supported
+make coverage          # Clang/LLVM coverage + HTML report; needs Python 3.10+
+make tooling-test      # Benchmark argument, workload, and report regression tests
+make benchmark         # Raw timing samples + statistics in build/benchmark.json
+make fuzz              # Optional libFuzzer run; needs its Clang runtime
+# Select another compiler if the default Clang lacks that runtime:
+make FUZZ_CC=/path/to/clang fuzz
+```
+
+The suite includes 218 fixed regression cases, 70,000 generated differential
+cases, 40,000 concurrent calls, allocation fault injection, a 10,000-rule
+scalability check, and 10,000 deterministic fuzz inputs. The
+[performance report](docs/performance.md) records measured results and tradeoffs;
+benchmarks compare against historical ESA, with no claim about other stemmers.
+
+## Documentation
+
+- [API and ownership](docs/api.md)
+- [Rule grammar and examples](docs/rules.md)
+- [Engine architecture](docs/architecture.md)
+- [Testing and tooling](docs/testing.md)
+- [Performance methodology and results](docs/performance.md)
+- [Compatibility and migration](docs/migration.md)
+- [Repository review and resolved defects](docs/review.md)
+- [Contributing](CONTRIBUTING.md) and [change log](CHANGELOG.md)
+
+Licensed under the [MIT License](LICENSE).

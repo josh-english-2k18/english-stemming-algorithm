@@ -1,6 +1,5 @@
-#!/bin/bash
-
-gcc -g -Wall -O3 -c esa.c -o esa.o
-gcc -g -Wall -O3 esa.o esaExample.c -o esaExample
-./esaExample 
-
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")"
+make all
+exec ./build/esaExample "$@"

@@ -21,76 +21,90 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  *
- * Notes:
- *
- * The English Stemming Algorithm (ESA) (see English, Joshua S. 2003)
- * reference implementation for reducing the morphological variation of any
- * given English Lanugage token through ESA-type conflation.
- *
- * Written by Joshua S. English.
- *
- * Boundary Conditions:
- *
- * 		1. input must be greater than 2 characters in length
- * 			a. has at least one vowel
- * 			b. has at least one consonant
- *
- * 		2. output must be:
- * 			a. greater than 2 characters in length
- *
- * Rule Definition:
- *
- * 		1. consists of 4 parts that may be repeated
- * 			a. an ending of 1 or more characters
- * 			b. an intact flag (only modify the token if it has not already
- * 			   been modified)
- * 			c. the number of characters to remove, 0 or more
- * 			d. an append string of 1 or more characters
- *
- * 		2. examples:
- * 			a. 'ies,n,3,y'
- * 			b. 'mu,y,2,'
- * 			c. 'ply,n,0,'
- * 			d. 'soin,n,4,j'
  */
 
-#if !defined(_ESA_H)
+#ifndef ESA_H_INCLUDED
+#define ESA_H_INCLUDED
 
-#define _ESA_H
+#include <stddef.h>
 
-#if defined(__cplusplus)
+#ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif
 
-// define esa data types
+#define ESA_MIN_TOKEN_LENGTH 5u
+#define ESA_MIN_STEM_LENGTH 3u
 
-typedef struct _EsaRuleList {
-	int ref;
-	int size;
-	int *length;
-	char **value;
-} EsaRuleList;
+typedef enum EsaStatus {
+    ESA_OK = 0,
+    ESA_INVALID_ARGUMENT,
+    ESA_INVALID_RULE,
+    ESA_OUT_OF_MEMORY,
+    ESA_BUFFER_TOO_SMALL,
+    ESA_OVERFLOW,
+    ESA_NOT_INITIALIZED
+} EsaStatus;
 
-typedef struct _Esa {
-	unsigned char debug_mode;
-	int longest_rule_size;
-	EsaRuleList rules;
+typedef struct EsaEngine EsaEngine;
+
+/* Owns a compiled engine. Do not copy or modify its members directly. */
+typedef struct Esa {
+    unsigned char debug_mode;
+    EsaEngine *engine;
 } Esa;
 
+/* Per-call counters; no shared mutable state or clock reads. */
+typedef struct EsaMetrics {
+    size_t input_bytes;
+    size_t output_bytes;
+    size_t trie_steps;
+    size_t rule_candidates;
+    size_t rule_steps;
+    size_t rules_applied;
+} EsaMetrics;
 
-// declare esa public functions
+typedef struct EsaEngineInfo {
+    size_t rule_groups;
+    size_t rule_steps;
+    size_t trie_nodes;
+    size_t max_growth;
+    size_t allocated_bytes;
+} EsaEngineInfo;
 
-void esaInit(Esa *esa);
-
+/* Initialize fresh/uninitialized storage; free before initializing it again.
+ * Failure leaves *esa empty and safe to free. Rule strings are copied.
+ * NULL rules with count == 0 creates a normalization-only engine. */
+EsaStatus esaInitDefault(Esa *esa);
+EsaStatus esaInitRules(Esa *esa, const char *const *rules, size_t count);
 void esaFree(Esa *esa);
 
-void esaSetDebugMode(Esa *esa, unsigned char mode);
+const char *esaStatusString(EsaStatus status);
+EsaStatus esaGetEngineInfo(const Esa *esa, EsaEngineInfo *info);
 
+/* Includes the NUL and a conservative bound for all possible rule growth. */
+EsaStatus esaRequiredCapacity(const Esa *esa, size_t length, size_t *capacity);
+
+/* Read exactly length bytes; ASCII letters are lowercased, all else removed.
+ * Empty inputs are valid. The caller must provide length readable bytes.
+ * output may equal token; other overlapping buffers are unsupported.
+ * On error, output is unchanged, *output_length is zero, and metrics are zero.
+ * output_length and metrics may be NULL. See docs/api.md for ownership. */
+EsaStatus esaStemInto(const Esa *esa, const char *token, size_t length,
+                     char *output, size_t capacity, size_t *output_length,
+                     EsaMetrics *metrics);
+
+/* On success, caller owns *output and must free it. On error, *output is NULL. */
+EsaStatus esaStemAlloc(const Esa *esa, const char *token, size_t length,
+                      char **output, EsaMetrics *metrics);
+
+/* Legacy entry points retained for existing callers. esaInit discards status;
+ * esaStemToken rejects nonpositive lengths and returns NULL on any failure. */
+void esaInit(Esa *esa);
+void esaSetDebugMode(Esa *esa, unsigned char mode);
 char *esaStemToken(Esa *esa, char *token, int length);
 
-#if defined(__cplusplus)
-};
-#endif // __cplusplus
+#ifdef __cplusplus
+}
+#endif
 
-#endif // _ESA_H
-
+#endif /* ESA_H_INCLUDED */
